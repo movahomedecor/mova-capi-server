@@ -34,9 +34,15 @@ async function sendPurchaseEvent(order) {
   };
 
   const attrs = order.note_attributes || [];
+  
   const fbclidAttr = attrs.find(a => a.name === 'fbclid');
   if (fbclidAttr?.value) {
     userData.fbc = `fb.1.${Date.now()}.${fbclidAttr.value}`;
+  }
+
+  const fbpAttr = attrs.find(a => a.name === '_fbp');
+  if (fbpAttr?.value) {
+    userData.fbp = fbpAttr.value;
   }
 
   Object.keys(userData).forEach(k => {
