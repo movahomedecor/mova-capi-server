@@ -37,7 +37,8 @@ async function sendPurchaseEvent(order) {
   
   const fbclidAttr = attrs.find(a => a.name === 'fbclid');
   if (fbclidAttr?.value) {
-    userData.fbc = `fb.1.${Date.now()}.${fbclidAttr.value}`;
+    const ts = Math.floor(Date.now() / 1000);
+    userData.fbc = `fb.1.${ts}.${fbclidAttr.value}`;
   }
 
   const fbpAttr = attrs.find(a => a.name === '_fbp');
