@@ -52,10 +52,11 @@ async function sendPurchaseEvent(order) {
       action_source: 'website',
       user_data:   userData,
       custom_data: {
-        currency: order.currency,
-        value:    parseFloat(order.total_price),
-        order_id: String(order.id),
-        content_type: 'product',
+  currency:      order.currency,
+  value:         parseFloat(order.total_price),
+  predicted_ltv: parseFloat(order.total_price) * 3,
+  order_id:      String(order.id),
+  content_type:  'product',
         contents: (order.line_items || []).map(item => ({
           id: String(item.product_id),
           quantity: item.quantity,
