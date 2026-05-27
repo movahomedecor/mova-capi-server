@@ -15,7 +15,7 @@ function formatPhone(phone) {
 }
 
 async function sendPurchaseEvent(order) {
-  const eventId   = `shopify_${order.id}_${Date.now()}`;
+  const eventId = `shopify_purchase_${order.id}`;
   const eventTime = Math.floor(new Date(order.created_at).getTime() / 1000);
   const customer  = order.customer || {};
   const address   = order.billing_address || order.shipping_address || {};
