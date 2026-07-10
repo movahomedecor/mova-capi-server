@@ -4,7 +4,7 @@ const PIXEL_ID     = process.env.META_PIXEL_ID;
 const ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
 
 // ============================================================
-// [NOVO] Dedup de segurança em memória (sem dependência nova).
+// Dedup de segurança em memória (sem dependência nova).
 // Protege contra reentrega do webhook orders/paid e contra a
 // retentativa cartão UnicoPag -> Appmax gerar dois disparos.
 // TTL de 6h cobre o cenário real (reentregas em segundos/minutos).
@@ -31,10 +31,17 @@ function formatPhone(phone) {
   return phone.replace(/\D/g, '');
 }
 
+// [NOVO] helper: lê um note_attribute do pedido pelo nome
+function getAttr(order, name) {
+  const attrs = order.note_attributes || [];
+  const found = attrs.find(a => a.name === name);
+  return found && found.value ? String(found.value) : null;
+}
+
 async function sendPurchaseEvent(order) {
   const eventId = `shopify_purchase_${order.id}`;
 
-  // [NOVO] dedup: se já enviamos este pedido, não reenvia
+  // dedup: se já enviamos este pedido, não reenvia
   if (alreadySent(eventId)) {
     console.log(`[dedup] já enviado, ignorando: ${eventId}`);
     return true;
@@ -43,6 +50,25 @@ async function sendPurchaseEvent(order) {
   const eventTime = Math.floor(new Date(order.created_at).getTime() / 1000);
   const customer  = order.customer || {};
   const address   = order.billing_address || order.shipping_address || {};
+
+  // ============================================================
+  // [ALTERADO] IP e UA: prioridade para os note_attributes
+  // capturados no NAVEGADOR REAL do cliente pelo snippet do tema.
+  // O browser_ip/client_details do pedido é só fallback, porque
+  // em checkout externo (UnicoPag) pode refletir o servidor do
+  // gateway em vez do cliente.
+  // ============================================================
+  const ipAttr = getAttr(order, '_client_ip_address');
+  const uaAttr = getAttr(order, '_client_user_agent');
+
+  const clientIp = ipAttr
+    || order.browser_ip
+    || order.client_details?.browser_ip
+    || null;
+
+  const clientUa = uaAttr
+    || order.client_details?.user_agent
+    || null;
 
   const userData = {
     em:  [hash(customer.email)],
@@ -53,40 +79,43 @@ async function sendPurchaseEvent(order) {
     st:  [hash(address.province_code)],
     zp:  [hash(address.zip)],
     country: [hash(address.country_code)],
-    // [NOVO] external_id: identificador estável do cliente (hash do email, fallback id)
+    // external_id: identificador estável do cliente (hash do email, fallback id)
     external_id: [hash(customer.email || (customer.id ? String(customer.id) : null))],
-    client_ip_address: order.browser_ip || null,
-    client_user_agent: order.client_details?.user_agent || null,
+    client_ip_address: clientIp,
+    client_user_agent: clientUa,
   };
-
-  const attrs = order.note_attributes || [];
 
   // ============================================================
   // fbc: prioriza o cookie _fbc capturado pronto no navegador.
   // Se não houver, reconstrói a partir do fbclid (fallback).
   // ============================================================
-  const fbcAttr = attrs.find(a => a.name === '_fbc');
-  if (fbcAttr?.value) {
-    // [NOVO] usa o _fbc pronto do navegador (mais confiável)
-    userData.fbc = fbcAttr.value;
+  const fbcAttr = getAttr(order, '_fbc');
+  if (fbcAttr) {
+    userData.fbc = fbcAttr;
   } else {
-    const fbclidAttr = attrs.find(a => a.name === 'fbclid');
-    if (fbclidAttr?.value) {
+    const fbclidAttr = getAttr(order, 'fbclid');
+    if (fbclidAttr) {
       const ts = Math.floor(Date.now() / 1000);
-      userData.fbc = `fb.1.${ts}.${fbclidAttr.value}`;
+      userData.fbc = `fb.1.${ts}.${fbclidAttr}`;
     }
   }
 
-  const fbpAttr = attrs.find(a => a.name === '_fbp');
-  if (fbpAttr?.value) {
-    userData.fbp = fbpAttr.value;
+  const fbpAttr = getAttr(order, '_fbp');
+  if (fbpAttr) {
+    userData.fbp = fbpAttr;
   }
 
-  // [NOVO] fallback de user_agent: se a Shopify não trouxe, usa o capturado no checkout
-  if (!userData.client_user_agent) {
-    const uaAttr = attrs.find(a => a.name === '_client_user_agent');
-    if (uaAttr?.value) userData.client_user_agent = uaAttr.value;
-  }
+  // ============================================================
+  // [NOVO] Log de diagnóstico: mostra pedido a pedido quais
+  // sinais de navegador chegaram e de onde vieram. Acompanhe
+  // nos Deploy Logs do Railway para ver a cobertura subindo.
+  // ============================================================
+  console.log(`[sinais] Pedido #${order.order_number}:`, {
+    fbp: userData.fbp ? 'OK' : 'AUSENTE',
+    fbc: userData.fbc ? (fbcAttr ? 'OK (cookie)' : 'OK (reconstruído)') : 'AUSENTE',
+    ip:  clientIp ? (ipAttr ? 'OK (navegador)' : 'OK (fallback Shopify)') : 'AUSENTE',
+    ua:  clientUa ? (uaAttr ? 'OK (navegador)' : 'OK (fallback Shopify)') : 'AUSENTE',
+  });
 
   // remove campos vazios/nulos
   Object.keys(userData).forEach(k => {
@@ -116,7 +145,6 @@ async function sendPurchaseEvent(order) {
     }]
   };
 
-  // [ALTERADO] API v19.0 -> v20.0
   const url = `https://graph.facebook.com/v20.0/${PIXEL_ID}/events?access_token=${ACCESS_TOKEN}`;
 
   try {
@@ -132,7 +160,7 @@ async function sendPurchaseEvent(order) {
       return false; // NÃO marca como enviado -> permite reprocessar
     }
 
-    // [NOVO] marca como enviado só após sucesso (dedup definitivo)
+    // marca como enviado só após sucesso (dedup definitivo)
     sentEvents.set(eventId, Date.now());
 
     console.log(`[CAPI] ✅ Purchase enviado! Pedido #${order.order_number} | Recebidos: ${result.events_received}`);
