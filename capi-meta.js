@@ -4,9 +4,6 @@ const crypto = require('crypto');
 
 // ====== FUNÇÕES DE HASH ======
 
-/**
- * Normalizar e fazer hash SHA-256
- */
 function normalizeAndHash(data) {
   if (!data) return null;
   
@@ -21,9 +18,6 @@ function normalizeAndHash(data) {
     .digest('hex');
 }
 
-/**
- * Hash de telefone (remove símbolos)
- */
 function hashPhone(phone) {
   if (!phone) return null;
   
@@ -39,9 +33,6 @@ function hashPhone(phone) {
     .digest('hex');
 }
 
-/**
- * Hash de email
- */
 function hashEmail(email) {
   if (!email) return null;
   
@@ -59,9 +50,6 @@ function hashEmail(email) {
 
 // ====== FUNÇÃO PRINCIPAL ======
 
-/**
- * Enviar evento Purchase para Meta CAPI
- */
 async function sendPurchaseEvent(order, request) {
   try {
     console.log('\n🔄 Processando pedido para Meta CAPI...');
@@ -73,14 +61,12 @@ async function sendPurchaseEvent(order, request) {
       throw new Error('❌ PIXEL_ID ou ACCESS_TOKEN não configurados');
     }
 
-    // ====== EXTRAIR DADOS DO CLIENTE ======
     const customer = order.customer || {};
     const billingAddress = customer.default_address || {};
     
     console.log('👤 Cliente:', customer.email);
     console.log('💰 Total:', order.total_price, 'BRL');
 
-    // ====== HASHING DE DADOS PESSOAIS (OBRIGATÓRIO) ======
     const userData = {};
     
     if (customer.email) {
@@ -118,11 +104,9 @@ async function sendPurchaseEvent(order, request) {
       console.log('✓ CEP hashed');
     }
     
-    // Brasil é fixo
     userData.country = normalizeAndHash('BR');
     console.log('✓ País: BR');
 
-    // ====== CONTEXTO HTTP ======
     const userAgent = request.get('user-agent') || 'unknown';
     const clientIp = 
       request.get('x-forwarded-for')?.split(',')[0] || 
@@ -133,35 +117,29 @@ async function sendPurchaseEvent(order, request) {
     console.log('📱 User Agent:', userAgent.substring(0, 50) + '...');
     console.log('🌐 IP:', clientIp);
 
-    // ====== IDS DO FACEBOOK ======
     const fbp = request.get('x-fbp') || order.fbp || null;
     const fbc = request.get('x-fbc') || order.fbc || null;
 
-    if (fbp) console.log('✓ fbp (Pixel ID):', fbp.substring(0, 20) + '...');
-    if (fbc) console.log('✓ fbc (Click ID):', fbc.substring(0, 20) + '...');
+    if (fbp) console.log('✓ fbp:', fbp.substring(0, 20) + '...');
+    if (fbc) console.log('✓ fbc:', fbc.substring(0, 20) + '...');
 
-    // ====== PAYLOAD PARA META CAPI ======
     const capiPayload = {
       data: [
         {
-          event_name: 'Purchase', // Evento crítico
+          event_name: 'Purchase',
           event_time: Math.floor(Date.now() / 1000),
-          event_id: `${order.id}_${Date.now()}`, // ID único
+          event_id: `${order.id}_${Date.now()}`,
           action_source: 'website',
           event_source_url: order.checkout_url || 'https://movadecor.com.br',
           
-          // ====== DADOS DO USUÁRIO (HASHED) ======
           user_data: userData,
           
-          // ====== CONTEXTO HTTP ======
           user_agent: userAgent,
           client_ip_address: clientIp,
           
-          // ====== IDS DO FACEBOOK ======
           fbc: fbc,
           fbp: fbp,
           
-          // ====== DADOS DO EVENTO ======
           event_data: {
             value: parseFloat(order.total_price || 0),
             currency: 'BRL',
@@ -171,7 +149,6 @@ async function sendPurchaseEvent(order, request) {
             num_items: order.line_items?.length || 1,
           },
           
-          // ====== CONFIGURAÇÃO META ======
           opt_out: false,
           processing_instruction: 'process',
         }
@@ -180,9 +157,7 @@ async function sendPurchaseEvent(order, request) {
     };
 
     console.log('\n📤 Enviando para Meta...');
-    console.log('URL: https://graph.facebook.com/v18.0/' + PIXEL_ID + '/events');
 
-    // ====== ENVIAR PARA META ======
     const response = await axios.post(
       `https://graph.facebook.com/v18.0/${PIXEL_ID}/events`,
       capiPayload,
