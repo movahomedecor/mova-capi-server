@@ -1,64 +1,70 @@
+// index.js
 require('dotenv').config();
 const express = require('express');
-const crypto  = require('crypto');
+const cookieParser = require('cookie-parser');
 const { sendPurchaseEvent } = require('./capi-meta');
-const app    = express();
-const PORT   = process.env.PORT || 3000;
-const SECRET = process.env.SHOPIFY_WEBHOOK_SECRET;
 
-// Rota de saúde — para o Railway saber que o servidor está OK
-app.get('/', (req, res) => res.send('Mōva Decor CAPI Server ✅ Online'));
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-// ============================================================
-// NOVO — Endpoint /ip
-// O snippet do theme.liquid chama este endpoint para descobrir
-// o IP público do visitante e gravá-lo como cart attribute
-// (_client_ip_address), que depois chega no webhook.
-// ============================================================
-const ALLOWED_ORIGINS = [
-  'https://movadecor.com.br',
-  'https://www.movadecor.com.br',
-];
+// Middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
 
-app.get('/ip', (req, res) => {
-  const origin = req.headers.origin || '';
-  if (ALLOWED_ORIGINS.includes(origin)) {
-    res.set('Access-Control-Allow-Origin', origin);
-  }
-  res.set('Cache-Control', 'no-store');
-
-  // O Railway fica atrás de proxy: o IP real do visitante
-  // vem no primeiro valor do header x-forwarded-for
-  const ip =
-    (req.headers['x-forwarded-for'] || '')
-      .split(',')[0]
-      .trim() ||
-    req.socket.remoteAddress ||
-    '';
-
-  res.json({ ip });
+// Health check
+app.get('/health', (req, res) => {
+  console.log('✅ Health check OK');
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date(),
+    pixelId: process.env.PIXEL_ID,
+    hasToken: !!process.env.META_ACCESS_TOKEN
+  });
 });
 
-// Webhook do Shopify — orders/paid
-app.post('/webhook/orders-paid',
-  express.raw({ type: 'application/json' }),
-  async (req, res) => {
-    const rawBody = req.body.toString();
-    const hmac    = req.headers['x-shopify-hmac-sha256'];
-    // Valida autenticidade
-    const hash = crypto.createHmac('sha256', SECRET)
-      .update(rawBody, 'utf8').digest('base64');
-    if (hash !== hmac) {
-      console.warn('[Webhook] ❌ HMAC inválido');
-      return res.status(401).send();
-    }
-    res.status(200).send();  // Responde imediatamente ao Shopify
-    const order = JSON.parse(rawBody);
-    console.log(`[Webhook] 📦 Pedido pago: #${order.order_number} | Gateway: ${order.gateway}`);
-    await sendPurchaseEvent(order);
-  }
-);
+// Webhook Shopify - Pedido pago
+app.post('/webhook/purchase', async (req, res) => {
+  try {
+    console.log('\n📨 WEBHOOK RECEBIDO DE SHOPIFY');
+    console.log('Order ID:', req.body.id);
+    
+    // Enviar para Meta CAPI
+    const result = await sendPurchaseEvent(req.body, req);
+    
+    console.log('✅ Evento enviado para Meta com sucesso\n');
+    res.status(200).json({ 
+      success: true, 
+      message: 'Event sent to Meta CAPI',
+      facebookEventId: result.events_received
+    });
 
+  } catch (error) {
+    console.error('❌ Erro no webhook:', error.message);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Webhook Shopify - Carrinho
+app.post('/webhook/cart', async (req, res) => {
+  try {
+    console.log('📨 Cart webhook recebido');
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Erro:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Iniciar servidor
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`\n🚀 CAPI Server rodando em porta ${PORT}`);
+  console.log(`📊 Pixel ID: ${process.env.PIXEL_ID}`);
+  console.log(`🔑 Token: ${process.env.META_ACCESS_TOKEN ? '✅ Configurado' : '❌ FALTANDO'}`);
+  console.log(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}\n`);
 });
+
+module.exports = app;
