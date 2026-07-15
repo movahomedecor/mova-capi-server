@@ -85,7 +85,7 @@ app.post('/webhook/cart', async (req, res) => {
 });
 
 // Iniciar servidor
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 CAPI Server rodando em porta ${PORT}`);
   console.log(`📊 Pixel ID: ${process.env.PIXEL_ID}`);
   console.log(`🔑 Token: ${process.env.META_ACCESS_TOKEN ? '✅ Configurado' : '❌ FALTANDO'}`);
