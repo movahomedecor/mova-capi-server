@@ -131,26 +131,25 @@ async function sendPurchaseEvent(order, request) {
           event_id: `${order.id}_${Date.now()}`,
           action_source: 'website',
           event_source_url: order.checkout_url || 'https://movadecor.com.br',
-          
-          user_data: userData,
-          
-          user_agent: userAgent,
-          client_ip_address: clientIp,
-          
-          fbc: fbc,
-          fbp: fbp,
-          
-          event_data: {
+
+          user_data: {
+            ...userData,
+            client_user_agent: userAgent,
+            client_ip_address: clientIp,
+            ...(fbc && { fbc }),
+            ...(fbp && { fbp }),
+          },
+
+          custom_data: {
             value: parseFloat(order.total_price || 0),
             currency: 'BRL',
             content_name: 'Compra Mōva Decor',
             content_type: 'product',
-            content_id: order.id,
+            content_ids: [String(order.id)],
             num_items: order.line_items?.length || 1,
           },
-          
+
           opt_out: false,
-          processing_instruction: 'process',
         }
       ],
       access_token: ACCESS_TOKEN
