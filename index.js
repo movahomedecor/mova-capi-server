@@ -23,10 +23,35 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Webhook Shopify - Pedido pago
-app.post('/webhook/purchase', async (req, res) => {
+// Webhook Shopify - Pedido pago (ROTA CORRIGIDA)
+app.post('/webhook/orders-paid', async (req, res) => {
   try {
     console.log('\n📨 WEBHOOK RECEBIDO DE SHOPIFY');
+    console.log('Order ID:', req.body.id);
+    
+    // Enviar para Meta CAPI
+    const result = await sendPurchaseEvent(req.body, req);
+    
+    console.log('✅ Evento enviado para Meta com sucesso\n');
+    res.status(200).json({ 
+      success: true, 
+      message: 'Event sent to Meta CAPI',
+      facebookEventId: result.events_received
+    });
+
+  } catch (error) {
+    console.error('❌ Erro no webhook:', error.message);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
+// Webhook Shopify - Pedido pago (ALIAS COMPATIBILIDADE)
+app.post('/webhook/purchase', async (req, res) => {
+  try {
+    console.log('\n📨 WEBHOOK RECEBIDO DE SHOPIFY (via /purchase)');
     console.log('Order ID:', req.body.id);
     
     // Enviar para Meta CAPI
