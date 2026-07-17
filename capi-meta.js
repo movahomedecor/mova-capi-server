@@ -128,7 +128,7 @@ async function sendPurchaseEvent(order, request) {
         {
           event_name: 'Purchase',
           event_time: Math.floor(Date.now() / 1000),
-          event_id: `${order.id}_${Date.now()}`,
+          event_id: String(order.id),
           action_source: 'website',
           event_source_url: order.checkout_url || 'https://movadecor.com.br',
 
